@@ -45,10 +45,12 @@ function AskAI({
 
   const callAi = async () => {
     if (isAiWorking || !prompt.trim()) return;
+    const originalHtml = html; // Store the HTML state at the start of the request
     setisAiWorking(true);
     setProviderError("");
 
     let contentResponse = "";
+    let accumulatedDiffResponse = "";
     let lastRenderTime = 0;
     try {
       onNewPrompt(prompt);
@@ -80,6 +82,9 @@ function AskAI({
           setisAiWorking(false);
           return;
         }
+        const responseType = request.headers.get("X-Response-Type") || "full"; // Default to full if header missing
+        console.log(`[AI Response] Type: ${responseType}`);
+
         const reader = request.body.getReader();
         const decoder = new TextDecoder("utf-8");
 
@@ -94,36 +99,80 @@ function AskAI({
             audio.play();
             setView("preview");
 
-            // Now we have the complete HTML including </html>, so set it to be sure
-            const finalDoc = contentResponse.match(
-              /<!DOCTYPE html>[\s\S]*<\/html>/
-            )?.[0];
-            if (finalDoc) {
-              setHtml(finalDoc);
+            if (responseType === "diff") {
+              // Apply diffs server-side
+              try {
+                console.log(
+                  "[Diff Apply] Sending original HTML and AI diff response to server..."
+                );
+                const applyRequest = await fetch("/api/apply-diffs", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    originalHtml: originalHtml, // Send the HTML from the start of the request
+                    aiResponseContent: accumulatedDiffResponse,
+                  }),
+                });
+
+                if (!applyRequest.ok) {
+                  const errorData = await applyRequest.json();
+                  throw new Error(
+                    errorData.message ||
+                      `Server failed to apply diffs (status ${applyRequest.status})`
+                  );
+                }
+
+                const patchedHtml = await applyRequest.text();
+                console.log("[Diff Apply] Received patched HTML from server.");
+                setHtml(patchedHtml); // Update editor with the final result
+                toast.success("AI changes applied");
+              } catch (applyError: any) {
+                console.error("Error applying diffs server-side:", applyError);
+                toast.error(
+                  `Failed to apply AI changes: ${applyError.message}`
+                );
+                // Optionally revert to originalHtml? Or leave the editor as is?
+                // setHtml(originalHtml); // Uncomment to revert on failure
+              }
+            } else {
+              // Now we have the complete HTML including </html>, so set it to be sure
+              const finalDoc = contentResponse.match(
+                /<!DOCTYPE html>[\s\S]*<\/html>/
+              )?.[0];
+              if (finalDoc) {
+                setHtml(finalDoc);
+              }
             }
 
             return;
           }
 
           const chunk = decoder.decode(value, { stream: true });
-          contentResponse += chunk;
-          const newHtml = contentResponse.match(/<!DOCTYPE html>[\s\S]*/)?.[0];
-          if (newHtml) {
-            // Force-close the HTML tag so the iframe doesn't render half-finished markup
-            let partialDoc = newHtml;
-            if (!partialDoc.includes("</html>")) {
-              partialDoc += "\n</html>";
-            }
+          if (responseType === "diff") {
+            // --- Diff Mode ---
+            accumulatedDiffResponse += chunk; // Just accumulate the raw response
+          } else {
+            contentResponse += chunk;
+            const newHtml = contentResponse.match(
+              /<!DOCTYPE html>[\s\S]*/
+            )?.[0];
+            if (newHtml) {
+              // Force-close the HTML tag so the iframe doesn't render half-finished markup
+              let partialDoc = newHtml;
+              if (!partialDoc.includes("</html>")) {
+                partialDoc += "\n</html>";
+              }
 
-            // Throttle the re-renders to avoid flashing/flicker
-            const now = Date.now();
-            if (now - lastRenderTime > 300) {
-              setHtml(partialDoc);
-              lastRenderTime = now;
-            }
+              // Throttle the re-renders to avoid flashing/flicker
+              const now = Date.now();
+              if (now - lastRenderTime > 300) {
+                setHtml(partialDoc);
+                lastRenderTime = now;
+              }
 
-            if (partialDoc.length > 200) {
-              onScrollToBottom();
+              if (partialDoc.length > 200) {
+                onScrollToBottom();
+              }
             }
           }
           read();
