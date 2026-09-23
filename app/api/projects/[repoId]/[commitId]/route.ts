@@ -1,6 +1,4 @@
 import { auth } from "@/lib/auth";
-import { createBranch, RepoDesignation } from "@huggingface/hub";
-import { format } from "date-fns";
 import { NextResponse } from "next/server";
 
 export async function POST(
@@ -15,35 +13,35 @@ export async function POST(
   }
   const token = session.accessToken;
 
-  const repo: RepoDesignation = {
-    type: "space",
-    name: session.user?.username + "/" + repoId,
-  };
-
-  const commitTitle = `🔖 ${format(new Date(), "dd/MM")} - ${format(
-    new Date(),
-    "HH:mm"
-  )} - Set commit ${commitId} as default.`;
-
-  await fetch(
-    `https://huggingface.co/api/spaces/${session.user?.username}/${repoId}/branch/main`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        startingPoint: commitId,
-        overwrite: true,
-      }),
-    }
-  ).catch((error) => {
-    return NextResponse.json(
-      { error: error ?? "Failed to create branch" },
-      { status: 500 }
+  try {
+    const response = await fetch(
+      `https://huggingface.co/api/spaces/${session.user?.username}/${repoId}/branch/main`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          startingPoint: commitId,
+          overwrite: true,
+        }),
+      }
     );
-  });
+
+    if (!response.ok) {
+      return NextResponse.json(
+        { error: "Failed to set default version" },
+        { status: response.status }
+      );
+    }
+  } catch (error) {
+    console.error("Failed to set default version:", error);
+    return NextResponse.json(
+      { error: "Failed to set default version" },
+      { status: 502 }
+    );
+  }
 
   return NextResponse.json({ success: true }, { status: 200 });
 }
