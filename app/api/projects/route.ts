@@ -30,7 +30,9 @@ export async function POST(request: Request) {
   }
 
   const title =
-    projectTitle || projectTitle !== "" ? projectTitle : "DeepSite Project";
+    typeof projectTitle === "string" && projectTitle.trim()
+      ? projectTitle.trim()
+      : "DeepSite Project";
 
   let formattedTitle = title
     .toLowerCase()
@@ -66,7 +68,7 @@ export async function POST(request: Request) {
   const emoji =
     EMOJIS_FOR_SPACE[Math.floor(Math.random() * EMOJIS_FOR_SPACE.length)];
   const README = `---
-title: ${escapeYamlValue(projectTitle)}
+title: ${escapeYamlValue(title)}
 colorFrom: ${colorFrom}
 colorTo: ${colorTo}
 sdk: static
