@@ -13,22 +13,19 @@ export const HistoryView = function () {
       "This action will set this historical version as the default version of the project. Are you sure you want to proceed?"
     );
     if (!confirmation) return;
-    const response = await fetch(`/api/projects/${repoId}/${commitId}`, {
-      method: "POST",
-    }).then(async (response) => {
-      if (response.ok) {
-        const data = await response.json();
-        return data;
+    try {
+      const response = await fetch(`/api/projects/${repoId}/${commitId}`, {
+        method: "POST",
+      });
+      if (!response.ok) {
+        throw new Error("Failed to set default version");
       }
-      throw new Error("Failed to save changes");
-    });
-    if (response.success) {
       toast.success("Set as default version successfully!");
       setTimeout(() => {
         close();
       }, 500);
-    } else {
-      alert("Failed to set as default version, try again later.");
+    } catch {
+      toast.error("Failed to set as default version, try again later.");
     }
   };
 
